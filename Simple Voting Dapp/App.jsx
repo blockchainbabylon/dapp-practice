@@ -1,56 +1,100 @@
-import { useEffect, useState } from "react";
+// components/VotingFrontend.js
+import { useState } from "react";
 import { ethers } from "ethers";
-import SimpleVoting from "../artifacts/contracts/SimpleVoting.sol/SimpleVoting.json";
+import { useAccount, useConnect, useDisconnect, useSigner } from "wagmi";
+import { InjectedConnector } from "wagmi/connectors/injected";
+import contractAbi from "../utils/votingAbi.json";
 
-const contractAddress = "YOUR_DEPLOYED_CONTRACT_ADDRESS";
+const CONTRACT_ADDRESS = "YOUR_CONTRACT_ADDRESS_HERE";
 
-function App() {
-    const [proposals, setProposals] = useState([]);
-    const [provider, setProvider] = useState();
-    const [signer, setSigner] = useState();
-    const [contract, setContract] = useState();
+export default function VotingFrontend() {
+  const { address, isConnected } = useAccount();
+  const { connect } = useConnect({ connector: new InjectedConnector() });
+  const { disconnect } = useDisconnect();
+  const { data: signer } = useSigner();
 
-    useEffect(() => {
-        async function init() {
-            if (window.ethereum) {
-                const provider = new ethers.providers.Web3Provider(window.ethereum);
-                await provider.send("eth_requestAccounts", []);
-                const signer = provider.getSigner();
-                const contract = new ethers.Contract(contractAddress, SimpleVoting.abi, signer);
-                const count = wait contract.totalProposals();
+  const [contract, setContract] = useState(null);
+  const [selectedProposal, setSelectedProposal] = useState("");
+  const [status, setStatus] = useState("");
 
-                let proposalsArray = [];
-                for (let i = 0; i < count; i++) {
-                    const prop = await contract.proposals(i);
-                    proposalsArray.push({ description: prop.description, voteCount: prop.voteCount.toString() });
-                }
+  const initContract = () => {
+    if (!signer) {
+      alert("Please connect your wallet first.");
+      return;
+    }
 
-                setProposals(proposalsArray);
-                setProvider(provider);
-                setSigner(signer);
-                setContract(contract);
-            }
-        }
-        init();
-    }, []);
+    const instance = new ethers.Contract(CONTRACT_ADDRESS, contractAbi, signer);
+    setContract(instance);
+  };
 
-    const vote = async (index) => {
-        await contract.vote(index);
-    };
+  const vote = async () => {
+    if (!contract || selectedProposal === "") {
+      alert("Please initialize contract and select a proposal.");
+      return;
+    }
 
-    return (
-        <div className="p-4">
-            <h1 className="text-xl font-bold mb-4">Simple VOting DApp</h1>
-            {proposals.map((p, idx) => (
-                <div key={idx} className="mb-2">
-                    <p>{p.description} - Votes: {p.voteCount}</p>
-                    <button onClick={() => vote(idx)} className="bg-blue-500 text-white px-2 py-1 rounded">
-                        Vote
-                    </button>
-                </div>
-            ))}
-        </div>
-    );
+    try {
+      const tx = await contract.vote(selectedProposal);
+      setStatus("Voting...");
+      await tx.wait();
+      setStatus("Voted successfully!");
+    } catch (err) {
+      console.error(err);
+      setStatus("Error voting.");
+    }
+  };
+
+  return (
+    <div className="p-6 max-w-md mx-auto bg-white rounded-xl shadow-md space-y-4">
+      <h1 className="text-2xl font-bold text-center">Voting DApp</h1>
+
+      {isConnected ? (
+        <>
+          <p className="text-sm text-center">Connected: {address.slice(0, 6)}...{address.slice(-4)}</p>
+          <div className="flex gap-2">
+            <button
+              onClick={() => disconnect()}
+              className="flex-1 bg-red-500 text-white py-2 rounded hover:bg-red-600"
+            >
+              Disconnect
+            </button>
+            <button
+              onClick={initContract}
+              className="flex-1 bg-blue-500 text-white py-2 rounded hover:bg-blue-600"
+            >
+              Init Contract
+            </button>
+          </div>
+        </>
+      ) : (
+        <button
+          onClick={() => connect()}
+          className="w-full bg-purple-600 text-white py-2 rounded hover:bg-purple-700"
+        >
+          Connect Wallet
+        </button>
+      )}
+
+      <select
+        className="w-full border p-2 rounded"
+        value={selectedProposal}
+        onChange={(e) => setSelectedProposal(e.target.value)}
+      >
+        <option value="">Select a proposal</option>
+        <option value="0">Proposal 0</option>
+        <option value="1">Proposal 1</option>
+        <option value="2">Proposal 2</option>
+      </select>
+
+      <button
+        onClick={vote}
+        className="w-full bg-green-600 text-white py-2 rounded hover:bg-green-700"
+      >
+        Vote
+      </button>
+
+      {status && <p className="text-center text-gray-600">{status}</p>}
+    </div>
+  );
 }
 
-export default App;
